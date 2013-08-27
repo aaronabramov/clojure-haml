@@ -1,5 +1,8 @@
 (ns haml.core)
 
-(defn -main
-  )
+(def string (slurp "./resources/sample.haml"))
 
+
+(defn -main []
+  (println (clojure.string/split-lines string))
+  )
