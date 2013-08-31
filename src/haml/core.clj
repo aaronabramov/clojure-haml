@@ -1,5 +1,6 @@
 (ns haml.core
-  (:require [clojure.string :as string]))
+  (:require [clojure.string :as string]
+            [clj-yaml.core :as yaml]))
 
 (def string (slurp "./resources/sample.haml"))
 
@@ -34,26 +35,49 @@
     {:expression expression}
     ))))
 
+(defn print-yml [x]
+  (doall (map println (string/split-lines (yaml/generate-string x))))
+  nil)
+
+(defn llast [x] (last (pop x)))
+
+(defn butllast [x] (vec (butlast (butlast x))))
+
+(defn add-to-last-of-stack-children [stack, line]
+  (conj (butlast stack)
+        (assoc (last stack) :children
+               (conj (:children (last stack)) {:expression (:expression line) :children []}))))
+
+(defn add-to-stack [stack line]
+  (conj stack {:expression (:expression line) :children []}))
+
+(defn pop-stack [times stack]
+  ;(println times stack)
+  (if (zero? times)
+      (vec stack)
+      (recur (dec times)
+                 (conj (butllast stack)
+                       (assoc (llast stack)
+                              :children (conj (:children (llast stack))
+                                              (last stack)))))))
+
+
 (defn build-tree [lines]
-    (loop [prev-level 0
-           stack [[]]
+    (print-yml (loop [prev-level 0
+           stack [{:children []}]
            cnt 0]
       (let [
-            line (nth lines cnt)
+            line (if (= (count lines) cnt) nil (nth lines cnt))
             current-level (:level line)
-            _ '(println (:expression line) current-level (- current-level prev-level))]
-      (if (= (dec (count lines)) cnt)
-        stack
+            _ '(println (- current-level prev-level))]
+      (if (= (count lines) cnt)
+        (pop-stack prev-level stack)
         (recur current-level
-               (case (- current-level prev-level)
-                  0 (conj stack [(:expression line)])
-                  1 (conj (butlast stack) (conj (last stack) [(:expression line)]))
-                  (conj (butlast (butlast stack)) (conj (last (butlast stack)) (last stack))))
-               (inc cnt))))))
-
-
-
-
+               (vec (case (- current-level prev-level)
+                 0 (add-to-last-of-stack-children stack line)
+                 1 (add-to-stack stack line)
+                 (add-to-last-of-stack-children (pop-stack (- prev-level current-level) stack) line)))
+               (inc cnt)))))))
 
 (defn -main []
   (build-tree (parsed-lines)))
