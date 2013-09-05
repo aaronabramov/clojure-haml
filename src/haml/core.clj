@@ -2,82 +2,57 @@
   (:require [clojure.string :as string]
             [clj-yaml.core :as yaml]))
 
-(def string (slurp "./resources/sample.haml"))
 
-(def tab-size 2)
+(def haml-string (slurp "./resources/sample.haml"))
 
-(def previous-block-level (atom 0))
+(defn lines [sting]
+  (->> string
+      (string/split-lines)
+      (map (fn [line]
+             (let [[whitespaces tag] (rest (re-matches #"(\s*)(.*)" line))
+                   indentation (/ (.length whitespaces) 2)]
+               {:tag tag :indentation indentation})))))
 
-(def current-block-level  (atom 0))
+;(def lines
+;    "Imagining that this was parsed from the following HAML:
+;
+;       %div#haha
+;       %p
+;         %a.link
+;       %p
+;     %div"
+;    [{:tag :div, :indentation 0, :attributes {:id "haha"}}
+;        {:tag :p, :indentation 2}
+;        {:tag :a, :indentation 4, :attributes {:class "link"}}
+;        {:tag :p, :indentation 2}
+;        {:tag :div, :indentation 0}])
 
-(def stack (atom nil))
+(declare parse-all)
 
-(defn delta [] (- current-block-level previous-block-level))
+(defn parse-element
+    "Given a vector of line-description maps, returns [el remaining-lines] where
+       el is in hiccup format."
+    [lines]
+    (let [[{:keys [indentation tag attributes], :as header} & more] lines,
+                  [nested remaining] (split-with #(> (:indentation %) indentation) more)]
+          [(apply vector tag attributes (parse-all nested))
+                remaining]))
 
-(defn attributes-map
-  [line]
-  (let
-    [[whitespaces expression] (rest (re-matches #"(\s*)(.*)" line))
-      level (/ (.length whitespaces) tab-size)]
-    (zipmap [:level :expression] [level expression])))
-
-(defn parsed-lines []
-  (map attributes-map (string/split-lines string)))
-
-(defn create-node [node]
-  (let [{:keys [expression level]} node]
-    (do
-      (reset! previous-block-level @current-block-level)
-      (reset! current-block-level level)
-      (if (= (delta) 1)
-
-
-    {:expression expression}
-    ))))
-
-(defn print-yml [x]
-  (doall (map println (string/split-lines (yaml/generate-string x))))
-  nil)
-
-(defn llast [x] (last (pop x)))
-
-(defn butllast [x] (vec (butlast (butlast x))))
-
-(defn add-to-last-of-stack-children [stack, line]
-  (conj (butlast stack)
-        (assoc (last stack) :children
-               (conj (:children (last stack)) {:expression (:expression line) :children []}))))
-
-(defn add-to-stack [stack line]
-  (conj stack {:expression (:expression line) :children []}))
-
-(defn pop-stack [times stack]
-  ;(println times stack)
-  (if (zero? times)
-      (vec stack)
-      (recur (dec times)
-                 (conj (butllast stack)
-                       (assoc (llast stack)
-                              :children (conj (:children (llast stack))
-                                              (last stack)))))))
-
-
-(defn build-tree [lines]
-    (print-yml (loop [prev-level 0
-           stack [{:children []}]
-           cnt 0]
-      (let [
-            line (if (= (count lines) cnt) nil (nth lines cnt))
-            current-level (:level line)
-            _ '(println (- current-level prev-level))]
-      (if (= (count lines) cnt)
-        (pop-stack prev-level stack)
-        (recur current-level
-               (vec (case (- current-level prev-level)
-                 0 (add-to-last-of-stack-children stack line)
-                 1 (add-to-stack stack line)
-                 (add-to-last-of-stack-children (pop-stack (- prev-level current-level) stack) line)))
-               (inc cnt)))))))
+(defn parse-all
+    "Returns a list of parsed elements."
+    [lines]
+    (loop [els []
+                    lines lines]
+          (if (empty? lines)
+                  els
+                  (let [[el remaining] (parse-element lines)]
+                            (recur (conj els el) remaining)))))
 
 (defn -main []
-  (build-tree (parsed-lines)))
+  (parse-all lines))
+
+;; => [[:div {:id "haha"}
+;; ;;      [:p nil [:a {:class "link"}]]
+;; ;;      ;;      [:p nil]]
+;; ;;      ;;      ;;     [:div nil]]
+;
